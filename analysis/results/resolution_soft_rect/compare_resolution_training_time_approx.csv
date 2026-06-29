@@ -1,0 +1,5 @@
+resolution,epochs_completed,train_start_approx,train_end_approx,total_training_time_sec_approx,total_training_time_min_approx,avg_epoch_time_sec_approx
+96x32,177,2026-04-04 00:11:52,2026-04-04 01:01:25,2973.4,49.56,16.8
+192x64,116,2026-04-04 01:01:25,2026-04-04 01:48:17,2812.1,46.87,24.24
+288x96,201,2026-04-04 01:48:17,2026-04-04 02:44:09,3351.6,55.86,16.67
+384x128,201,2026-04-04 02:44:09,2026-04-04 03:56:19,4330.2,72.17,21.54

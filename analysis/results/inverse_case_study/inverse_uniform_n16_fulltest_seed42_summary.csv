@@ -1,0 +1,2 @@
+n_cases,n_sensors,sensor_strategy,sensor_seed,inv_seed,mean_obs_mse,median_obs_mse,mean_loc_error_m,median_loc_error_m,success_within_0p125m,success_within_0p25m
+145,16,grid_centered,42,42,0.02851884757682424,0.007240366190671921,0.8376961723818377,0.6938316659869372,0.1793103448275862,0.2827586206896552
