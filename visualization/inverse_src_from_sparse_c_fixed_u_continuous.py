@@ -49,12 +49,19 @@ def df_to_grid(df: pd.DataFrame, Lx=9.0, Ly=3.0, nx=128 * 3, ny=128):
     Xg, Yg = np.meshgrid(x, y)
 
     pts = df[["X (m)", "Y (m)"]].to_numpy(dtype=np.float64)
+    ux = df["Velocity[i] (m/s)"].to_numpy(dtype=np.float64)
+    uy = df["Velocity[j] (m/s)"].to_numpy(dtype=np.float64)
     cc = df["Passive Scalar"].to_numpy(dtype=np.float64)
 
-    lin = griddata(pts, cc, (Xg, Yg), method="linear")
-    near = griddata(pts, cc, (Xg, Yg), method="nearest")
-    C = np.where(np.isnan(lin), near, lin).astype(np.float32)
-    return x, y, C
+    def interp(vals: np.ndarray):
+        lin = griddata(pts, vals, (Xg, Yg), method="linear")
+        near = griddata(pts, vals, (Xg, Yg), method="nearest")
+        return np.where(np.isnan(lin), near, lin).astype(np.float32)
+
+    Ux = interp(ux)
+    Uy = interp(uy)
+    C = interp(cc)
+    return x, y, Ux, Uy, C
 
 
 def build_source_mask_rect(Xg: np.ndarray, Yg: np.ndarray, src_x: float, src_y: float, src_size: float) -> np.ndarray:
@@ -99,6 +106,8 @@ def build_input_field(
     src_size: float,
     sigma: float,
     soft_k: float,
+    ux: np.ndarray = None,
+    uy: np.ndarray = None,
 ) -> np.ndarray:
     xx01 = np.linspace(0.0, 1.0, nx, dtype=np.float32)
     yy01 = np.linspace(0.0, 1.0, ny, dtype=np.float32)
@@ -126,7 +135,12 @@ def build_input_field(
         raise ValueError(f"Unsupported mask_kind: {mask_kind}")
     s = s[None, ...]
 
-    x_field = np.concatenate([s, Xc, Yc], axis=0)
+    channels = [s, Xc, Yc]
+    if ux is not None or uy is not None:
+        if ux is None or uy is None:
+            raise ValueError("ux and uy must be provided together.")
+        channels.extend([ux[None, ...].astype(np.float32), uy[None, ...].astype(np.float32)])
+    x_field = np.concatenate(channels, axis=0)
     return x_field[None, ...]
 
 
@@ -278,6 +292,8 @@ def _build_input_field_torch(
     soft_k: float,
     device: torch.device,
     dtype: torch.dtype,
+    ux: torch.Tensor = None,
+    uy: torch.Tensor = None,
 ) -> torch.Tensor:
     xx01 = torch.linspace(0.0, 1.0, nx, device=device, dtype=dtype)
     yy01 = torch.linspace(0.0, 1.0, ny, device=device, dtype=dtype)
@@ -303,7 +319,12 @@ def _build_input_field_torch(
         S = torch.sigmoid(-float(soft_k) * sdf)
 
     S = S.unsqueeze(0).unsqueeze(0)
-    return torch.cat([S, Xc, Yc], dim=1)
+    channels = [S, Xc, Yc]
+    if ux is not None or uy is not None:
+        if ux is None or uy is None:
+            raise ValueError("ux and uy must be provided together.")
+        channels.extend([ux, uy])
+    return torch.cat(channels, dim=1)
 
 
 def _logit(p: torch.Tensor) -> torch.Tensor:
@@ -337,10 +358,14 @@ def _optimize_source_autodiff(
     lr: float,
     n_restarts: int,
     restart_seed: int = 42,
+    ux_field: np.ndarray = None,
+    uy_field: np.ndarray = None,
 ):
     iy_t = torch.as_tensor(iy, device=device, dtype=torch.long)
     ix_t = torch.as_tensor(ix, device=device, dtype=torch.long)
     obs_t = torch.as_tensor(obs, device=device, dtype=x_mean.dtype)
+    ux_t = None if ux_field is None else torch.as_tensor(ux_field, device=device, dtype=x_mean.dtype).unsqueeze(0).unsqueeze(0)
+    uy_t = None if uy_field is None else torch.as_tensor(uy_field, device=device, dtype=x_mean.dtype).unsqueeze(0).unsqueeze(0)
 
     best = {'loss': float('inf'), 'sx': None, 'sy': None, 'restart': -1, 'trace': []}
     x_rng = float(x_max - x_min)
@@ -385,6 +410,8 @@ def _optimize_source_autodiff(
                 soft_k=soft_k,
                 device=device,
                 dtype=x_mean.dtype,
+                ux=ux_t,
+                uy=uy_t,
             )
 
             x_n = (x_in - x_mean) / (x_std + 1e-12)
@@ -413,6 +440,107 @@ def _optimize_source_autodiff(
     return best
 
 
+def _optimize_source_autodiff_from_initializations(
+    model,
+    x_mean,
+    x_std,
+    y_mean,
+    y_std,
+    device,
+    iy: np.ndarray,
+    ix: np.ndarray,
+    obs: np.ndarray,
+    initial_xy: np.ndarray,
+    ny: int,
+    nx: int,
+    Lx: float,
+    Ly: float,
+    mask_kind: str,
+    src_size: float,
+    sigma: float,
+    soft_k: float,
+    x_min: float,
+    x_max: float,
+    y_min: float,
+    y_max: float,
+    steps: int,
+    lr: float,
+    ux_field: np.ndarray = None,
+    uy_field: np.ndarray = None,
+):
+    """Optimize continuous source coordinates from prescribed coarse-search initializations."""
+    initial_xy = np.asarray(initial_xy, dtype=np.float64)
+    if initial_xy.ndim != 2 or initial_xy.shape[1] != 2 or len(initial_xy) == 0:
+        raise ValueError("initial_xy must have shape (n_initializations, 2) with at least one row.")
+
+    iy_t = torch.as_tensor(iy, device=device, dtype=torch.long)
+    ix_t = torch.as_tensor(ix, device=device, dtype=torch.long)
+    obs_t = torch.as_tensor(obs, device=device, dtype=x_mean.dtype)
+    ux_t = None if ux_field is None else torch.as_tensor(ux_field, device=device, dtype=x_mean.dtype).unsqueeze(0).unsqueeze(0)
+    uy_t = None if uy_field is None else torch.as_tensor(uy_field, device=device, dtype=x_mean.dtype).unsqueeze(0).unsqueeze(0)
+
+    best = {'loss': float('inf'), 'sx': None, 'sy': None, 'restart': -1, 'trace': []}
+    x_rng = float(x_max - x_min)
+    y_rng = float(y_max - y_min)
+
+    for r, (sx0, sy0) in enumerate(initial_xy):
+        sx0 = float(np.clip(sx0, x_min, x_max))
+        sy0 = float(np.clip(sy0, y_min, y_max))
+        px0 = torch.tensor((sx0 - x_min) / x_rng, device=device, dtype=x_mean.dtype)
+        py0 = torch.tensor((sy0 - y_min) / y_rng, device=device, dtype=x_mean.dtype)
+        zx = nn.Parameter(_logit(px0))
+        zy = nn.Parameter(_logit(py0))
+        opt = torch.optim.Adam([zx, zy], lr=float(lr))
+
+        local_trace = []
+        local_best_loss = float('inf')
+        local_best_xy = (sx0, sy0)
+
+        for t in range(max(1, int(steps))):
+            opt.zero_grad(set_to_none=True)
+            sx = x_min + x_rng * torch.sigmoid(zx)
+            sy = y_min + y_rng * torch.sigmoid(zy)
+            x_in = _build_input_field_torch(
+                sx=sx,
+                sy=sy,
+                ny=ny,
+                nx=nx,
+                Lx=Lx,
+                Ly=Ly,
+                mask_kind=mask_kind,
+                src_size=src_size,
+                sigma=sigma,
+                soft_k=soft_k,
+                device=device,
+                dtype=x_mean.dtype,
+                ux=ux_t,
+                uy=uy_t,
+            )
+            x_n = (x_in - x_mean) / (x_std + 1e-12)
+            y_n = model(x_n)
+            y = y_n * (y_std + 1e-12) + y_mean
+            pred_obs = y[0, 0, iy_t, ix_t]
+            loss = torch.mean((pred_obs - obs_t) ** 2)
+            loss.backward()
+            opt.step()
+
+            l = float(loss.detach().cpu())
+            sx_f = float(sx.detach().cpu())
+            sy_f = float(sy.detach().cpu())
+            local_trace.append((r, t, sx_f, sy_f, l))
+            if l < local_best_loss:
+                local_best_loss = l
+                local_best_xy = (sx_f, sy_f)
+
+        if local_best_loss < best['loss']:
+            best['loss'] = local_best_loss
+            best['sx'], best['sy'] = local_best_xy
+            best['restart'] = r
+            best['trace'] = local_trace
+
+    return best
+
+
 def unique_candidate_sources(rows: pd.DataFrame) -> List[Tuple[float, float]]:
     uniq = rows[["src_x", "src_y"]].drop_duplicates().copy()
     return [(float(r.src_x), float(r.src_y)) for r in uniq.itertuples(index=False)]
@@ -420,10 +548,10 @@ def unique_candidate_sources(rows: pd.DataFrame) -> List[Tuple[float, float]]:
 
 def main():
     ap = argparse.ArgumentParser(description="Inverse source localization from sparse C observations using trained fixed-u FNO.")
-    ap.add_argument("--workdir", type=str, default=r"D:\Study\DL_Models\FNO\data_extended_S")
+    ap.add_argument("--workdir", type=str, default="data/dense969")
     ap.add_argument("--exports", type=str, default="exports")
     ap.add_argument("--cases", type=str, default="cases.csv")
-    ap.add_argument("--ckpt", type=str, default=r"D:\Study\DL_Models\FNO\checkpoints\fno_c_mask_fixed_u_large_dataset.pt")
+    ap.add_argument("--ckpt", type=str, default="runs/baseline/model.pt")
 
     grp = ap.add_mutually_exclusive_group(required=True)
     grp.add_argument("--case_id", type=str)
@@ -484,10 +612,10 @@ def main():
     meta = ckpt.get("meta", {})
     in_ch = int(meta.get("in_ch", int(ckpt["x_mean"].shape[1])))
     out_ch = int(meta.get("out_ch", 1))
-    if in_ch != 3:
+    if in_ch not in (3, 5):
         raise ValueError(
-            f"Checkpoint in_ch={in_ch}, but this inverse script expects in_ch=3 ([S_mask, X, Y]). "
-            "Please use a checkpoint retrained by train_fno_srcpos_fixed_u_gpu_large_dataset.py."
+            f"Checkpoint in_ch={in_ch}, but this inverse script expects in_ch=3 or in_ch=5. "
+            "Please use a checkpoint retrained by train_fixed_u_srcpos_to_c.py."
         )
     if out_ch != 1:
         raise ValueError(f"This inverse script expects C-only checkpoint (out_ch=1), got out_ch={out_ch}")
@@ -551,7 +679,7 @@ def main():
     # Build observation from GT C of chosen case
     gt_file = resolve_case_file(exports_dir, case_id, true_u, true_sx, true_sy)
     df_gt = load_case_csv(gt_file)
-    _, _, C_gt = df_to_grid(df_gt, Lx=args.Lx, Ly=args.Ly, nx=args.nx, ny=args.ny)
+    _, _, Ux_gt, Uy_gt, C_gt = df_to_grid(df_gt, Lx=args.Lx, Ly=args.Ly, nx=args.nx, ny=args.ny)
 
     iy, ix = make_sensor_indices(args.ny, args.nx, args.n_sensors, args.sensor_strategy, args.sensor_seed, args.sensor_margin_x, args.sensor_margin_y)
     obs = C_gt[iy, ix].astype(np.float32)
@@ -598,6 +726,8 @@ def main():
         lr=float(args.inv_lr),
         n_restarts=int(args.inv_restarts),
         restart_seed=int(args.inv_seed),
+        ux_field=Ux_gt if in_ch == 5 else None,
+        uy_field=Uy_gt if in_ch == 5 else None,
     )
 
     est_sx = float(best["sx"])
@@ -634,6 +764,8 @@ def main():
             src_size=float(args.src_size),
             sigma=float(args.sigma),
             soft_k=float(args.soft_k),
+            ux=Ux_gt if in_ch == 5 else None,
+            uy=Uy_gt if in_ch == 5 else None,
         )
         C_est = predict_c_field(model, (x_mean, x_std), (y_mean, y_std), device, x_in_est)
 

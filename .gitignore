@@ -32,3 +32,37 @@ grid_cache*/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Paper release: input fields, derived results and unrelated experiments
+data/
+runs/
+outputs/
+analysis/results/
+analysis/figures/
+checkpoints/
+paper_runs/
+experiments/
+revision/
+**/cache/
+**/quadrature/
+*.sim~
+*.npy
+*.npz
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.svg
+*.ipynb
+*.zip
+*.tar.gz
+*.egg-info/
+.venv*/
+.env
+.env.*
+*.pem
+*.key
+credentials*
+secrets*

@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the accompanying accepted manuscript."
+title: "FNO for indoor contaminant transport and source identification"
+type: software
+authors:
+  - family-names: Wang
+    given-names: Zihao
+  - family-names: Lausch
+    given-names: Kevin H.
+  - family-names: Lichtner
+    given-names: Eugen
+  - family-names: Ramasetti
+    given-names: Eshwar Kumar
+  - family-names: Kriegel
+    given-names: Martin
+repository-code: "https://github.com/wzh-miasanmia/fno_annex20"
+preferred-citation:
+  type: article
+  title: "A Fourier Neural Operator Framework for Indoor Contaminant Transport Prediction, Source Localization, and Release Strength Estimation"
+  authors:
+    - family-names: Wang
+      given-names: Zihao
+    - family-names: Lausch
+      given-names: Kevin H.
+    - family-names: Lichtner
+      given-names: Eugen
+    - family-names: Ramasetti
+      given-names: Eshwar Kumar
+    - family-names: Kriegel
+      given-names: Martin
+  journal: Building and Environment
+  year: 2026
+  notes: "Accepted for publication; final DOI not yet confirmed in this code release."

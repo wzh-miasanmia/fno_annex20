@@ -1,92 +1,123 @@
-# FNO Annex20
+# FNO for indoor contaminant transport and source identification
 
-Code and supporting analysis for:
+Code accompanying the accepted *Building and Environment* manuscript:
 
-**A Fourier Neural Operator Framework for Indoor Contaminant Transport Prediction and Source Localization**
+**A Fourier Neural Operator Framework for Indoor Contaminant Transport Prediction,
+Source Localization, and Release Strength Estimation**
 
-This repository contains the paper-oriented subset extracted from the local `FNO_final` project. It is intended as the public code location for reproducing the main Fourier Neural Operator (FNO) experiments, figures, and inverse-source workflows used in the manuscript.
+Zihao Wang, Kevin H. Lausch, Eugen Lichtner, Eshwar Kumar Ramasetti, and Martin Kriegel.
 
-## Scope
+The main setting is the two-dimensional IEA Annex 20 room with prescribed
+ventilation and a spatially varying passive-scalar source. A soft rectangular
+source mask conditions a full-field FNO surrogate; the surrogate also supports
+continuous inverse localization and profiled release-strength estimation.
 
-The repository focuses on a fixed-inlet indoor contaminant transport setting (`u = 0.2 m/s`) with dense source-location sampling. The FNO surrogate learns the mapping from source representation to passive-scalar concentration field and is then used for:
+This release contains paper-related code and small case/split manifests, not
+the complete research workspace. Unreported PDEformer, physical-splitting,
+staged GINO and other exploratory experiments are intentionally excluded.
 
-- forward concentration-field prediction
-- source-mask ablation
-- random and spatial holdout evaluation
-- resolution and zero-shot super-resolution analysis
-- sparse-sensor inverse source localization
+## Code map
 
-Large CFD exports, STAR-CCM simulation files, and trained PyTorch checkpoints are intentionally excluded from version control. Lightweight CSV summaries, training histories, plotting scripts, and final figures are kept.
+| Paper component | Entry points |
+| --- | --- |
+| FNO and source encodings | `model/train_fixed_u_srcpos_to_c.py`, `analysis/run_forward_multiseed.py` |
+| FNO / FCN / U-Net / DeepONet / GINO comparison | `analysis/unified_model_benchmark/` |
+| Source-space IDW reference | `analysis/run_source_space_interp_baseline.py` |
+| Zero-shot resolution transfer | `analysis/zero_shot_multiseed_20260915/` |
+| Known-strength inverse comparison | `analysis/benchmark_inverse_three_methods_loss_time.py` |
+| Off-grid scaling and joint inversion | `analysis/evaluate_source_strength_scaled_fno.py`, `analysis/joint_source_strength/` |
+| Training-set-size ablation | `analysis/prepare_strict_datasize_splits.py`, `splits/strict_datasize/` |
+| Sensor count/layout ablation | `analysis/sensor_count_unified_20260917/` |
+| Variable-inlet-velocity appendix | `model/train_joint_fno_uvc.py` |
+| Interactive application | `visualization/app_fixed_u_srcpos_to_c.py` |
+| Inference timing | `analysis/inference_timing_20260916/benchmark.py` |
 
-## Layout
+Publication plotting scripts are in `analysis/plot_*.py`. Geo-FNO and extended
+trainer modules retained in `model/` supply shared dataset, quadrature and
+architecture dependencies for the reported GINO implementation; their presence
+does not indicate additional reported model comparisons.
 
-- `model/`: FNO training entry point and model definition.
-- `analysis/`: evaluation, aggregation, and figure-generation scripts.
-- `visualization/`: single-case inference and inverse source localization scripts.
-- `analysis/results/`: lightweight summary and case-level CSV outputs used by figures.
-- `analysis/figures/`: manuscript-oriented figures.
-- `checkpoints/`: tracked training histories and curves; large `.pt` checkpoint files are ignored.
-- `analysis/data_u0p2_dense_969/`: case descriptors and data-generation scripts; raw CFD exports and `.sim` files are ignored.
+## Installation
 
-## Environment
+Use a separate Python environment. Install a PyTorch build appropriate for your
+hardware, then install the scientific dependencies:
 
-Python dependencies are listed in `requirements.txt`. A typical setup is:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```bash
 python -m pip install -r requirements.txt
 ```
 
-For GPU training, install the PyTorch build matching your CUDA runtime from the official PyTorch instructions.
+The unified comparison and inference-timing runners require CUDA for their
+recorded synchronization/profiling scopes. The core FNO trainer and many
+evaluation scripts can use CPU. No system CUDA toolkit is installed or changed
+by this repository.
 
-## Main Commands
+## Data and checkpoints
 
-Train the fixed-inlet FNO model:
+Raw CFD exports, STAR-CCM+ `.sim` files, weights, caches, generated figures and
+historical run outputs are **not bundled**. Checked-in CSVs contain coordinates
+and split assignments, not concentration fields. See [the data specification](docs/DATA.md).
 
-```powershell
-python model/train_fixed_u_srcpos_to_c.py `
-  --workdir analysis/data_u0p2_dense_969 `
-  --exports exports `
-  --cases cases.csv `
-  --fixed_inlet_u 0.2 `
-  --mask_kind soft_rect `
-  --soft_k 30 `
-  --width 48 `
-  --modes1 16 `
-  --modes2 16 `
-  --depth 4 `
-  --nx 384 `
-  --ny 128 `
-  --save checkpoints/baseline_soft_rect/dense969_u0p2_w48_m16_d4_soft_rect_sk30_rawtarget.pt
+The main dataset contains 969 cases with fixed 679/145/145 partitions. The
+three-seed benchmark uses **7, 42 and 123**. The independent off-grid campaign
+contains 15 positions at three normalized release strengths. The variable-inlet
+appendix uses a separate 9,900-case dataset and inlet-group split.
+
+## Quick start: the paper FNO configuration
+
+From the repository root, with CFD exports supplied in `data/dense969/exports/`:
+
+```bash
+python model/train_fixed_u_srcpos_to_c_strict_ablation.py \
+  --workdir data/dense969 \
+  --cases ../../splits/strict_datasize/cases_n679.csv \
+  --split_csv splits/strict_datasize/split_n679.csv \
+  --fixed_inlet_u 0.2 --no_velocity_input \
+  --mask_kind soft_rect --src_size 0.20 --soft_k 30 \
+  --target_transform raw --nx 384 --ny 128 \
+  --width 48 --depth 4 --modes1 16 --modes2 16 \
+  --epochs 300 --patience 30 --batch 4 --workers 0 --cache \
+  --lr 0.001 --weight_decay 0.000001 --seed 7 --split_seed 42 \
+  --device cuda --save runs/baseline/model.pt
 ```
 
-Evaluate a trained checkpoint:
+This runs the core trainer, not the five-model profiling campaign. The `--cases`
+path is relative to `--workdir`; use absolute paths when supplying data elsewhere.
+See [reproduction notes](docs/REPRODUCIBILITY.md) and experiment READMEs for exact
+protocols, checkpoint provenance and required arguments. Do not overwrite
+historical checkpoints with a new campaign.
 
-```powershell
-python analysis/evaluate_fixed_u_srcpos_to_c.py `
-  --ckpt checkpoints/baseline_soft_rect/dense969_u0p2_w48_m16_d4_soft_rect_sk30_rawtarget.pt `
-  --subset test `
-  --out_dir analysis/results/baseline_soft_rect
+## Interactive application
+
+```bash
+python -m pip install -r requirements-app.txt
+streamlit run visualization/app_fixed_u_srcpos_to_c.py
 ```
 
-Create example paper figures:
+Select a trusted, compatible checkpoint and dataset. Checkpoint deserialization
+is not a sandbox: do not load untrusted model files.
 
-```powershell
-python analysis/plot_baseline_training_validation_loss.py
-python analysis/plot_baseline_case_grid.py
-python analysis/plot_forward_multiseed_boxplot.py
-python analysis/plot_spatial_test_heatmap_dense.py
-python analysis/plot_resolution_case_grid_to384_mixedgt_2x4.py
-python analysis/plot_inverse_three_cases_uniform_n16.py
+## Software checks
+
+These checks require the installed scientific dependencies but no CFD fields,
+checkpoints or GPU:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+python -m unittest analysis.sensor_count_unified_20260917.test_output_safety
 ```
 
-## Data and Checkpoints
+During packaging, CPU synthetic forward/backward checks also covered all five
+architectures, and one-epoch synthetic CLI runs checked the four grid trainers
+and checkpoint loading. These are software checks, not a rerun of the paper's
+scientific experiments or GPU timing measurements.
 
-The raw CFD export directory is not committed because it is large. To reproduce training exactly, place the exported case CSVs under:
+## Scope and citation
 
-```text
-analysis/data_u0p2_dense_969/exports/
-```
+The principal surrogate was evaluated for one two-dimensional room and a fixed
+source shape/size. The variable-inlet appendix uses a separately trained model;
+it does not establish arbitrary geometry or boundary-condition transfer. No
+new scientific results are introduced by this code cleanup.
 
-Trained `.pt` checkpoints are also excluded. The repository keeps the associated history CSV files and figure outputs so the paper plots remain traceable without storing large binary weights.
+Citation metadata is in [CITATION.cff](CITATION.cff). A DOI will be added when the
+final publication identifier is confirmed. No new code license has been assigned
+as part of this cleanup.

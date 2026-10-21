@@ -1,2 +1,0 @@
-experiment,checkpoint,subset,n_cases,nx_eval,ny_eval,mean_rel_l2_c,std_rel_l2_c,mean_rmse_c,mean_mae_c
-dense969_u0p2_w48_m16_d4_soft_rect_sk30_rawtarget_48x16,D:\Study\DL_Models\FNO_final\paper_runs\resolution_study_dense969_u0p2_w48_m16_d4_soft_rect\checkpoints\dense969_u0p2_w48_m16_d4_soft_rect_sk30_rawtarget_48x16.pt,test,145,384,128,0.21706456607015315,0.05632205812294112,0.24742962060303525,0.15204051640527003

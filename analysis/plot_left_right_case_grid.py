@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -163,16 +164,22 @@ def main():
     plt.rcParams.update({
         "font.family": "serif",
         "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Times New Roman",
+        "mathtext.it": "Times New Roman:italic",
+        "mathtext.bf": "Times New Roman:bold",
         "font.size": 11,
         "axes.labelsize": 11,
         "xtick.labelsize": 10,
         "ytick.labelsize": 10,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "axes.linewidth": 0.8,
     })
 
     fig, axes = plt.subplots(3, 3, figsize=(12.6, 6.7))
     col_titles = ["(a)", "(b)", "(c)"]
-    row_labels = ["GT", "Prediction", "Error"]
+    row_labels = ["CFD", "FNO", "Error"]
     for j, title in enumerate(col_titles):
         axes[0, j].set_title(title, fontsize=13)
     for i, row_label in enumerate(row_labels):
@@ -193,6 +200,9 @@ def main():
         im_c = plot_field(axes[0, j], item["gt"], item["x"], item["y"], vmin=c_min, vmax=c_max, cmap="viridis")
         plot_field(axes[1, j], item["pred"], item["x"], item["y"], vmin=c_min, vmax=c_max, cmap="viridis")
         im_e = plot_field(axes[2, j], item["err"], item["x"], item["y"], vmin=-e_max, vmax=e_max, cmap="coolwarm")
+        for i in range(3):
+            axes[i, j].plot(item["src_x"], item["src_y"], marker="x", color="white",
+                            markersize=5.5, markeredgewidth=1.1, zorder=4)
 
     for i in range(2):
         for j in range(3):
@@ -203,9 +213,11 @@ def main():
     cax_c = fig.add_axes([0.10, 0.88, 0.35, 0.022])
     cax_e = fig.add_axes([0.57, 0.88, 0.35, 0.022])
     cbar_c = fig.colorbar(im_c, cax=cax_c, orientation="horizontal")
-    cbar_c.set_label("C")
+    cbar_c.set_label("Concentration, $C$", labelpad=4)
+    cbar_c.ax.xaxis.set_label_position("top")
     cbar_e = fig.colorbar(im_e, cax=cax_e, orientation="horizontal")
-    cbar_e.set_label("Error")
+    cbar_e.set_label(r"Error, $\widehat{C}-C_{\mathrm{CFD}}$", labelpad=4)
+    cbar_e.ax.xaxis.set_label_position("top")
 
     out_path = root / args.out_path if not Path(args.out_path).is_absolute() else Path(args.out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

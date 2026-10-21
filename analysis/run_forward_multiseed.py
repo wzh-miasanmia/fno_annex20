@@ -95,6 +95,7 @@ def main() -> None:
                 "--exports", args.exports,
                 "--cases", args.cases,
                 "--fixed_inlet_u", str(args.fixed_inlet_u),
+                "--no_velocity_input",
                 "--inlet_u_tol", str(args.inlet_u_tol),
                 "--sample_seed", str(args.sample_seed),
                 "--split_seed", str(args.split_seed),
