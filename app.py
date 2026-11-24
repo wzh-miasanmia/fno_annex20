@@ -1,7 +1,6 @@
 """Annex 20 browser demo backed by the two trained CPU inference models."""
 import base64
 import hashlib
-import hmac
 import io
 import json
 import logging
@@ -22,7 +21,6 @@ from inference import load_concentration, load_velocity, make_xy, predict_hybrid
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SCENARIO = (0.30, 4.50, 1.50)
-HOSTED = not (ROOT / "models/velocity.pt").is_file()
 
 
 def checkpoint(manifest, name):
@@ -81,18 +79,6 @@ def field_plot(values, label, cmap, x, y, meta, vectors=None):
 st.set_page_config(page_title="Annex 20 | Flow & concentration", page_icon="🌬️", layout="wide")
 st.title("Annex 20 · Flow and concentration")
 st.write("Explore how inlet velocity and source position change the predicted fields.")
-
-if HOSTED and not st.session_state.get("annex20_unlocked"):
-    with st.form("demo_access"):
-        passcode = st.text_input("Demo access code", type="password")
-        unlock = st.form_submit_button("Open demo", type="primary")
-    if unlock:
-        expected = st.secrets.get("ANNEX20_ACCESS_CODE", "")
-        if expected and hmac.compare_digest(passcode.encode("utf-8"), expected.encode("utf-8")):
-            st.session_state.annex20_unlocked = True
-            st.rerun()
-        st.error("That access code did not match.")
-    st.stop()
 
 with st.sidebar:
     st.header("Scenario")
