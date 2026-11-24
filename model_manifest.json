@@ -1,0 +1,14 @@
+{
+  "velocity": {
+    "file": "models/velocity.pt",
+    "sha256": "e04998ddcd2e026e1692714b25dd961cb1a227f81e75dd925f6877cd7621f3a9",
+    "bytes": 50424637,
+    "encrypted_file": "models/velocity.aesgcm"
+  },
+  "concentration": {
+    "file": "models/concentration.pt",
+    "sha256": "a8a9fb89617d195a6dfb218ecdda913b2e1142596155930790d4a224e1bef5c9",
+    "bytes": 50895853,
+    "encrypted_file": "models/concentration.aesgcm"
+  }
+}
